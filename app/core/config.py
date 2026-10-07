@@ -2,7 +2,7 @@ import json
 from functools import lru_cache
 from typing import Annotated, Literal, Self
 
-from pydantic import field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -32,13 +32,46 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = 30
+
+    # --- Frontend ---
+    # Used to build links in emails, e.g. {FRONTEND_URL}/reset-password?token=...
+    FRONTEND_URL: str = "http://localhost:3000"
+
+    # --- Email (SMTP) ---
+    # Leave SMTP_HOST empty in dev: emails are logged instead of sent.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "no-reply@ailusion.local"
+    # STARTTLS after connecting (port 587). Set false for plain SMTP (e.g. a local Mailpit).
+    SMTP_TLS: bool = True
 
     # --- PostgreSQL ---
-    POSTGRES_HOST: str = "localhost"
-    POSTGRES_PORT: int = 5432
-    POSTGRES_USER: str = "postgres"
-    POSTGRES_PASSWORD: str = "postgres"  # noqa: S105 (local dev default)
-    POSTGRES_DB: str = "ailusion_journey"
+    # Each also reads the PG_* name (PG_HOST, PG_PORT, PG_USER, PG_PASSWORD, PG_DATABASE).
+    POSTGRES_HOST: str = Field(
+        default="localhost", validation_alias=AliasChoices("POSTGRES_HOST", "PG_HOST")
+    )
+    POSTGRES_PORT: int = Field(
+        default=5432, validation_alias=AliasChoices("POSTGRES_PORT", "PG_PORT")
+    )
+    POSTGRES_USER: str = Field(
+        default="postgres", validation_alias=AliasChoices("POSTGRES_USER", "PG_USER")
+    )
+    POSTGRES_PASSWORD: str = Field(
+        default="postgres",  # local dev default
+        validation_alias=AliasChoices("POSTGRES_PASSWORD", "PG_PASSWORD"),
+    )
+    POSTGRES_DB: str = Field(
+        default="ailusion_journey", validation_alias=AliasChoices("POSTGRES_DB", "PG_DATABASE")
+    )
+    # TLS to Postgres (asyncpg). "prefer" works with a server that has SSL off (local Docker)
+    # and encrypts as soon as the server turns it on; use "require" (or "verify-full" with a
+    # CA-signed certificate) for any database reached over the internet.
+    POSTGRES_SSLMODE: Literal[
+        "disable", "allow", "prefer", "require", "verify-ca", "verify-full"
+    ] = Field(default="prefer", validation_alias=AliasChoices("POSTGRES_SSLMODE", "PG_SSLMODE"))
     DB_ECHO: bool = False
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 20
@@ -80,6 +113,7 @@ class Settings(BaseSettings):
             host=self.POSTGRES_HOST,
             port=self.POSTGRES_PORT,
             database=self.POSTGRES_DB,
+            query={"ssl": self.POSTGRES_SSLMODE},
         )
 
     @property

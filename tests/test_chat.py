@@ -63,9 +63,7 @@ async def auth(client: AsyncClient, user: User) -> dict[str, str]:
 
 
 # ---------------------------------------------------------------- happy path
-async def test_send_message_creates_thread(
-    client: AsyncClient, user: User, use_llm: None
-) -> None:
+async def test_send_message_creates_thread(client: AsyncClient, user: User, use_llm: None) -> None:
     headers = await auth(client, user)
     resp = await client.post("/api/v1/chat", json={"message": "Đi Đà Lạt 3 ngày?"}, headers=headers)
 
@@ -188,9 +186,7 @@ async def test_empty_message_rejected(client: AsyncClient, user: User, use_llm: 
     [lambda request: httpx.Response(500, text="boom")],
     indirect=True,
 )
-async def test_upstream_error_becomes_503(
-    client: AsyncClient, user: User, use_llm: None
-) -> None:
+async def test_upstream_error_becomes_503(client: AsyncClient, user: User, use_llm: None) -> None:
     headers = await auth(client, user)
     resp = await client.post("/api/v1/chat", json={"message": "chào"}, headers=headers)
     assert resp.status_code == 503

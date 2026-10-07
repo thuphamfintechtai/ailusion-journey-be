@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ChatSend(BaseModel):
@@ -14,11 +14,11 @@ class ChatSend(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     thread_id: str | None = None
 
-    model_config = {
-        "json_schema_extra": {
+    model_config = ConfigDict(
+        json_schema_extra={
             "examples": [{"message": "Đi Đà Lạt 3 ngày, 2 người lớn 1 bé, ngân sách 15tr?"}]
         }
-    }
+    )
 
 
 class ChatReply(BaseModel):

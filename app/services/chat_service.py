@@ -72,8 +72,7 @@ async def stream_message(
 async def get_history(
     *, redis: Redis, client: httpx.AsyncClient, user_id: uuid.UUID, thread_id: str
 ) -> ChatHistory:
-    if not await _owns(redis, user_id, thread_id):
-        raise NotFoundError("Conversation not found")
+    await _ensure_owned(redis, user_id, thread_id)
 
     body = await llm_client.get_history(client, thread_id)
     return ChatHistory(
@@ -104,7 +103,7 @@ async def delete_thread(*, redis: Redis, user_id: uuid.UUID, thread_id: str) -> 
     """Forget the conversation on our side. Upstream state expires on its own TTL."""
     removed = await redis.zrem(_index_key(user_id), thread_id)
     if not removed:
-        raise NotFoundError("Conversation not found")
+        raise _thread_not_found()
 
 
 def _index_key(user_id: uuid.UUID) -> str:
@@ -115,8 +114,8 @@ def _new_thread_id() -> str:
     return f"chat-{uuid.uuid4().hex[:12]}"
 
 
-async def _owns(redis: Redis, user_id: uuid.UUID, thread_id: str) -> bool:
-    return await redis.zscore(_index_key(user_id), thread_id) is not None
+def _thread_not_found() -> NotFoundError:
+    return NotFoundError("Conversation not found")
 
 
 async def _ensure_owned(redis: Redis, user_id: uuid.UUID, thread_id: str | None) -> None:
@@ -124,8 +123,10 @@ async def _ensure_owned(redis: Redis, user_id: uuid.UUID, thread_id: str | None)
 
     404 rather than 403: someone else's thread id should look like it does not exist.
     """
-    if thread_id is not None and not await _owns(redis, user_id, thread_id):
-        raise NotFoundError("Conversation not found")
+    if thread_id is None:
+        return
+    if await redis.zscore(_index_key(user_id), thread_id) is None:
+        raise _thread_not_found()
 
 
 async def _touch(redis: Redis, user_id: uuid.UUID, thread_id: str) -> None:

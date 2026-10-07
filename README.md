@@ -78,6 +78,8 @@ tests/                      # pytest + httpx
 | POST | `/api/v1/auth/token` | Đăng nhập OAuth2 form (dùng cho nút **Authorize** trong Swagger) |
 | POST | `/api/v1/auth/refresh` | Đổi refresh token lấy cặp token mới (token cũ bị thu hồi) |
 | POST | `/api/v1/auth/logout` | Thu hồi refresh token |
+| POST | `/api/v1/auth/forgot-password` | `{"email"}` → luôn 202, gửi email chứa link đặt lại mật khẩu nếu email tồn tại |
+| POST | `/api/v1/auth/reset-password` | `{"token", "new_password"}` → 204; token sai/hết hạn/đã dùng → 400 `invalid_reset_token` |
 | GET / PATCH | `/api/v1/users/me` | Xem / cập nhật thông tin của mình |
 | GET | `/api/v1/users` | Danh sách user (superuser, phân trang `limit`/`offset`) |
 | GET | `/api/v1/users/{id}` | Chi tiết user (superuser) |
@@ -88,6 +90,8 @@ tests/                      # pytest + httpx
 | DELETE | `/api/v1/chat/threads/{id}` | Bỏ hội thoại khỏi danh sách |
 
 **Về token:** access token sống ngắn (mặc định 30 phút) và không bị thu hồi khi logout; refresh token (7 ngày) được xoay vòng mỗi lần `/refresh`, và `jti` của token đã dùng/đã logout được lưu trong Redis tới khi hết hạn.
+
+**Quên mật khẩu:** `forgot-password` trả cùng một response (202) dù email có tồn tại hay không, và gửi email trong background task nên thời gian phản hồi cũng không lộ. Link có dạng `{FRONTEND_URL}/reset-password?token=...`; token là JWT loại `reset` (không dùng thay access/refresh token được), sống `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES` phút (mặc định 30), chỉ dùng được một lần (`jti` đánh dấu trong Redis) và tự mất hiệu lực khi mật khẩu đã đổi. Đặt lại thành công thì mọi refresh token cấp trước đó bị từ chối (access token cũ vẫn sống tới khi hết hạn). Email gửi qua SMTP (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TLS`); để trống `SMTP_HOST` khi dev thì link được in ra log (INFO) thay vì gửi.
 
 ## Chat với agent du lịch
 

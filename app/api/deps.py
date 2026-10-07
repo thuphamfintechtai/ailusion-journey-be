@@ -1,4 +1,3 @@
-import uuid
 from typing import Annotated
 
 import httpx
@@ -8,13 +7,13 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.exceptions import ForbiddenError, UnauthorizedError
+from app.core.exceptions import ForbiddenError
 from app.core.llm import get_llm_client
 from app.core.redis import get_redis
 from app.core.security import decode_token
 from app.db.session import get_db
 from app.models.user import User
-from app.services import user_service
+from app.services import auth_service
 
 # tokenUrl powers the "Authorize" button in Swagger UI (/docs).
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_PREFIX}/auth/token")
@@ -26,16 +25,7 @@ Token = Annotated[str, Depends(oauth2_scheme)]
 
 
 async def get_current_user(db: DbSession, token: Token) -> User:
-    payload = decode_token(token, "access")
-    try:
-        user_id = uuid.UUID(payload.sub)
-    except ValueError as exc:
-        raise UnauthorizedError() from exc
-
-    user = await user_service.get_by_id(db, user_id)
-    if user is None or not user.is_active:
-        raise UnauthorizedError()
-    return user
+    return await auth_service.get_token_user(db, decode_token(token, "access"))
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]

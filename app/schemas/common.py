@@ -13,7 +13,3 @@ class Page[T](BaseModel):
     total: int
     limit: int
     offset: int
-
-
-class Message(BaseModel):
-    message: str

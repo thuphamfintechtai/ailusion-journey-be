@@ -25,7 +25,11 @@ async def send_message(
     user_id: str,
 ) -> dict[str, Any]:
     """Send one turn, wait for the full answer. Returns `{"thread_id", "reply"}`."""
-    return await _post_json("/chat", client, payload=_payload(message, thread_id, user_id))
+    try:
+        response = await client.post("/chat", json=_payload(message, thread_id, user_id))
+    except httpx.HTTPError as exc:
+        raise _unavailable(exc) from exc
+    return _parse(response)
 
 
 async def get_history(client: httpx.AsyncClient, thread_id: str) -> dict[str, Any]:
@@ -74,16 +78,6 @@ def _payload(message: str, thread_id: str | None, user_id: str) -> dict[str, Any
     if thread_id:
         payload["thread_id"] = thread_id
     return payload
-
-
-async def _post_json(
-    path: str, client: httpx.AsyncClient, *, payload: dict[str, Any]
-) -> dict[str, Any]:
-    try:
-        response = await client.post(path, json=payload)
-    except httpx.HTTPError as exc:
-        raise _unavailable(exc) from exc
-    return _parse(response)
 
 
 def _parse(response: httpx.Response) -> dict[str, Any]:

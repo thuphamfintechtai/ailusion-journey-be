@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.llm import create_llm_client
 from app.core.logging import setup_logging
-from app.core.middleware import RequestContextMiddleware
+from app.core.middleware import REQUEST_ID_HEADER, RequestContextMiddleware
 from app.core.redis import create_redis
 from app.db.session import engine
 
@@ -55,7 +55,7 @@ def create_app() -> FastAPI:
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
-            expose_headers=["X-Request-ID"],
+            expose_headers=[REQUEST_ID_HEADER],
         )
 
     register_exception_handlers(app)
