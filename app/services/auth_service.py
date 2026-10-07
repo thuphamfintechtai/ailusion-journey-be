@@ -4,6 +4,7 @@ import uuid
 
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 from app.core.exceptions import ForbiddenError, UnauthorizedError
@@ -32,7 +33,9 @@ _PASSWORD_RESET_AT_KEY_PREFIX = "auth:password-reset-at:"  # noqa: S105
 async def authenticate(db: AsyncSession, email: str, password: str) -> User:
     user = await user_service.get_by_email(db, email)
     # verify_password runs even when the user is missing, so timing doesn't leak which emails exist.
-    password_ok = verify_password(password, user.hashed_password if user else None)
+    password_ok = await run_in_threadpool(
+        verify_password, password, user.hashed_password if user else None
+    )
     if user is None or not password_ok:
         raise UnauthorizedError("Incorrect email or password")
     if not user.is_active:
@@ -124,7 +127,7 @@ async def reset_password(db: AsyncSession, redis: Redis, token: str, new_passwor
     if not await redis.set(f"{_RESET_USED_KEY_PREFIX}{payload.jti}", "1", ex=ttl, nx=True):
         raise invalid_reset_token_error()
 
-    user.hashed_password = hash_password(new_password)
+    user.hashed_password = await run_in_threadpool(hash_password, new_password)
     await db.commit()
 
     await redis.set(

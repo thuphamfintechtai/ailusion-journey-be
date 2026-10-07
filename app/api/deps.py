@@ -25,7 +25,12 @@ Token = Annotated[str, Depends(oauth2_scheme)]
 
 
 async def get_current_user(db: DbSession, token: Token) -> User:
-    return await auth_service.get_token_user(db, decode_token(token, "access"))
+    user = await auth_service.get_token_user(db, decode_token(token, "access"))
+    # End the read transaction so the connection goes back to the pool now, not when the
+    # request finishes (chat requests wait on the LLM for up to minutes). expire_on_commit
+    # is off, so `user` stays loaded and attached; a later write starts a new transaction.
+    await db.commit()
+    return user
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]

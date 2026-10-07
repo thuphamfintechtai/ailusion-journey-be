@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     DB_ECHO: bool = False
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 20
+    DB_POOL_PRE_PING: bool = False
+    DB_POOL_RECYCLE_SECONDS: int = 1800
+    # Fail fast instead of queueing a request for 30s when the pool is exhausted.
+    DB_POOL_TIMEOUT_SECONDS: float = 10.0
 
     # --- Redis ---
     REDIS_URL: str = "redis://localhost:6379/0"

@@ -3,6 +3,7 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.core.exceptions import ConflictError
 from app.core.security import hash_password
@@ -24,7 +25,7 @@ async def create_user(db: AsyncSession, data: UserCreate, *, is_superuser: bool 
 
     user = User(
         email=data.email,
-        hashed_password=hash_password(data.password),
+        hashed_password=await run_in_threadpool(hash_password, data.password),
         full_name=data.full_name,
         is_superuser=is_superuser,
     )
@@ -41,7 +42,7 @@ async def update_user(db: AsyncSession, user: User, data: UserUpdate) -> User:
     values = data.model_dump(exclude_unset=True)
     password = values.pop("password", None)
     if password:
-        user.hashed_password = hash_password(password)
+        user.hashed_password = await run_in_threadpool(hash_password, password)
     for field, value in values.items():
         setattr(user, field, value)
     await db.commit()
