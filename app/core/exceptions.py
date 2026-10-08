@@ -55,6 +55,15 @@ class ForbiddenError(AppError):
     message = "Not enough permissions"
 
 
+class UnprocessableError(AppError):
+    """The request is well-formed JSON but its content is invalid (e.g. the LLM service
+    rejected a trip-plan form). Shape matches our other errors, not FastAPI's 422 list."""
+
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    code = "validation_error"
+    message = "Invalid request"
+
+
 class UpstreamError(AppError):
     """A service we depend on (e.g. the LLM service) is down, slow, or returned an error."""
 

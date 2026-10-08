@@ -89,6 +89,10 @@ class Settings(BaseSettings):
     LLM_SERVICE_TIMEOUT: float = 120.0
     # How long a conversation stays listed. Match CHECKPOINT_TTL_MINUTES in the LLM service.
     CHAT_THREAD_TTL_MINUTES: int = 1440
+    # A trip plan runs ~15 tool calls and 2 LLM calls upstream: give it longer than one chat turn.
+    LLM_PLAN_TIMEOUT: float = 300.0
+    # How long a plan stays reachable (its progress events live as long as the checkpoint).
+    PLAN_THREAD_TTL_MINUTES: int = 1440
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
