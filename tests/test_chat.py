@@ -314,6 +314,40 @@ async def test_retrying_unanswered_question_is_not_saved_twice(
         app.dependency_overrides.pop(get_llm_client, None)
 
 
+async def test_question_is_saved_even_when_the_llm_service_fails(
+    client: AsyncClient, user: User
+) -> None:
+    """The request reaches the LLM service before the question is committed; a failing
+    LLM service must still leave the question in the history."""
+
+    def down(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/chat/stream":
+            return httpx.Response(503, json={"detail": "down"})
+        return default_handler(request)
+
+    app.dependency_overrides[get_llm_client] = lambda: fake_llm(default_handler)
+    try:
+        headers = await auth(client, user)
+        thread_id = (
+            await client.post("/api/v1/chat", json={"message": "Xin chào"}, headers=headers)
+        ).json()["thread_id"]
+        app.dependency_overrides[get_llm_client] = lambda: fake_llm(down)
+        async with client.stream(
+            "POST",
+            "/api/v1/chat/stream",
+            json={"message": "Còn ở đó không?", "thread_id": thread_id},
+            headers=headers,
+        ) as resp:
+            body = (await resp.aread()).decode()
+        # Lỗi đến sau khi stream đã mở: báo bằng sự kiện `error`, không cắt ngang stream.
+        assert '"type": "error"' in body
+
+        history = (await client.get(f"/api/v1/chat/threads/{thread_id}", headers=headers)).json()
+        assert [m["content"] for m in history["messages"]][-1] == "Còn ở đó không?"
+    finally:
+        app.dependency_overrides.pop(get_llm_client, None)
+
+
 async def test_rename_thread(client: AsyncClient, user: User, use_llm: None) -> None:
     headers = await auth(client, user)
     thread_id = (

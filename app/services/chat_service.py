@@ -17,7 +17,7 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
 
@@ -97,6 +97,10 @@ async def stream_message(
     The conversation and the question are saved before streaming starts — once bytes are
     flowing we can no longer fail cleanly, and an unanswered question should still show up
     in the history. The answer is saved when the stream ends.
+
+    The request goes to the LLM service *before* the question is committed: the database may
+    be far away (each round trip ~250 ms), and the LLM service starts working as soon as it
+    has the request, so the commit overlaps with it instead of delaying the first words.
     """
     conversation = await _owned(db, user_id, thread_id) if thread_id else None
     history = await _recent_messages(db, conversation)
@@ -110,16 +114,23 @@ async def stream_message(
         conversation.last_active_at = datetime.now(UTC)
     else:
         _append(db, conversation, "human", message)
-    await db.commit()
     conversation_id = conversation.id
 
-    async with llm_client.stream_message(
-        client,
-        message=message,
-        thread_id=conversation_id,
-        user_id=str(user_id),
-        history=history,
-    ) as response:
+    async with AsyncExitStack() as stack:
+        try:
+            response = await stack.enter_async_context(
+                llm_client.stream_message(
+                    client,
+                    message=message,
+                    thread_id=conversation_id,
+                    user_id=str(user_id),
+                    history=history,
+                )
+            )
+        finally:
+            # Saved whether or not the LLM service answered: a question that got no answer
+            # should still show up, and can be retried.
+            await db.commit()
         yield _relay_and_save(response, session_factory, conversation_id)
 
 

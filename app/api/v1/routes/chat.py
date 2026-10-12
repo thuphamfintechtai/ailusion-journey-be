@@ -1,3 +1,4 @@
+import json
 from collections.abc import AsyncIterator
 from typing import Annotated
 
@@ -5,6 +6,7 @@ from fastapi import APIRouter, Query, status
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import CurrentUser, DbSession, LlmClient, RedisClient, SessionFactory
+from app.core.exceptions import AppError
 from app.schemas.chat import (
     ChatHistory,
     ChatPlanCreate,
@@ -53,16 +55,23 @@ async def stream_message(
     user_id = user.id
 
     async def forward() -> AsyncIterator[bytes]:
-        async with chat_service.stream_message(
-            db=db,
-            session_factory=sessions,
-            client=llm,
-            user_id=user_id,
-            message=data.message,
-            thread_id=data.thread_id,
-        ) as chunks:
-            async for chunk in chunks:
-                yield chunk
+        # Headers are already sent once streaming starts, so an error (LLM service down,
+        # thread not found…) can no longer become an HTTP status: send it as an SSE `error`
+        # event the client already handles, instead of cutting the stream.
+        try:
+            async with chat_service.stream_message(
+                db=db,
+                session_factory=sessions,
+                client=llm,
+                user_id=user_id,
+                message=data.message,
+                thread_id=data.thread_id,
+            ) as chunks:
+                async for chunk in chunks:
+                    yield chunk
+        except AppError as exc:
+            event = {"type": "error", "message": exc.message}
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n".encode()
 
     return StreamingResponse(
         forward(),
