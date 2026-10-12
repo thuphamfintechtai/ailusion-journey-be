@@ -72,6 +72,7 @@ class TripInfo(BaseModel):
     adults: int | None = None
     children: int | None = None
     seniors: int | None = None
+    group_type: str | None = None
     budget_million: float | None = None
     budget_hard: bool | None = None
     access: list[str] = Field(default_factory=list)
