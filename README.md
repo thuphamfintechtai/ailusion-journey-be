@@ -90,6 +90,7 @@ tests/                      # pytest + httpx
 | PATCH | `/api/v1/chat/threads/{id}` | Đổi tên hội thoại |
 | DELETE | `/api/v1/chat/threads/{id}` | Bỏ hội thoại khỏi danh sách |
 | GET / PUT | `/api/v1/chat/threads/{id}/trip-info` | Form chuyến đi trợ lý đã điền từ cuộc trò chuyện / người dùng xác nhận form |
+| POST | `/api/v1/chat/plan` | Lập lộ trình từ khung chat trống: tạo hội thoại mới rồi lập như dòng dưới, trả `thread_id` |
 | POST | `/api/v1/chat/threads/{id}/plan` | Lập lộ trình từ form của trang chat; có phương án thì lưu vào hội thoại (`messages.plan`) |
 | POST | `/api/v1/plan` | Lập lộ trình từ form (trang `/plan`), trả nguyên `ItineraryResponse` của service LLM |
 | GET | `/api/v1/plan/{thread_id}/events` | Tiến độ từng bước của một lần lập lộ trình (SSE) |

@@ -120,6 +120,10 @@ class ChatPlanCreate(BaseModel):
 class ChatPlanReply(BaseModel):
     """The plan, plus the two messages appended to the conversation."""
 
+    thread_id: str = Field(
+        description="The conversation holding the plan — new when planning from an empty chat"
+    )
+
     plan: dict[str, Any] = Field(
         description="The LLM service's `ItineraryResponse`, unchanged. `status` is `need_info` "
         "when questions must be answered first; nothing is saved to the conversation then."

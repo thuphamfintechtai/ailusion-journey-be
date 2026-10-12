@@ -648,6 +648,52 @@ async def test_plan_questions_are_returned_without_saving(
         app.dependency_overrides.pop(get_llm_client, None)
 
 
+async def test_plan_from_an_empty_chat_starts_a_conversation(
+    client: AsyncClient, user: User
+) -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/plan") and path.startswith("/chat/"):
+            seen.append(path)
+            return httpx.Response(
+                200,
+                json={
+                    "plan": {"status": "ok", "destination": "Huế"},
+                    "request_text": "Lập lộ trình: Huế, 2 ngày",
+                    "reply": "**Lộ trình Huế 2 ngày**",
+                },
+            )
+        return default_handler(request)
+
+    app.dependency_overrides[get_llm_client] = lambda: fake_llm(handler)
+    try:
+        headers = await auth(client, user)
+        resp = await client.post(
+            "/api/v1/chat/plan",
+            json={
+                "form": {
+                    "destination": "Huế",
+                    "start_date": "2026-12-20",
+                    "end_date": "2026-12-21",
+                    "group_size": 2,
+                }
+            },
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        thread_id = resp.json()["thread_id"]
+        assert thread_id.startswith("chat-") and seen == [f"/chat/{thread_id}/plan"]
+        threads = (await client.get("/api/v1/chat/threads", headers=headers)).json()["items"]
+        assert threads[0]["thread_id"] == thread_id
+        assert threads[0]["title"] == "Lập lộ trình Huế"
+        history = (await client.get(f"/api/v1/chat/threads/{thread_id}", headers=headers)).json()
+        assert [m["role"] for m in history["messages"]] == ["human", "ai"]
+    finally:
+        app.dependency_overrides.pop(get_llm_client, None)
+
+
 async def test_plan_in_someone_elses_chat_is_404(
     client: AsyncClient, user: User, use_llm: None
 ) -> None:

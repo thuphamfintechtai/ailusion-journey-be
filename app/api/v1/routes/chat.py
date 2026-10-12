@@ -111,6 +111,23 @@ async def confirm_trip(
     )
 
 
+@router.post("/plan", response_model=ChatPlanReply)
+async def plan_in_new_chat(
+    data: ChatPlanCreate,
+    user: CurrentUser,
+    db: DbSession,
+    redis: RedisClient,
+    llm: LlmClient,
+) -> ChatPlanReply:
+    """ "Lập lộ trình" from an empty chat: start a conversation, then plan as below.
+
+    The new conversation's id is `thread_id` in the reply.
+    """
+    return await chat_service.plan_in_chat(
+        db=db, redis=redis, client=llm, user_id=user.id, thread_id=None, data=data
+    )
+
+
 @router.post("/threads/{thread_id}/plan", response_model=ChatPlanReply)
 async def plan_in_chat(
     thread_id: str,

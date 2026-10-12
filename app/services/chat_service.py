@@ -217,7 +217,7 @@ async def plan_in_chat(
     redis: Redis,
     client: httpx.AsyncClient,
     user_id: uuid.UUID,
-    thread_id: str,
+    thread_id: str | None,
     data: ChatPlanCreate,
 ) -> ChatPlanReply:
     """Build the plan from the chat's form and keep it in the conversation.
@@ -226,8 +226,18 @@ async def plan_in_chat(
     under its own plan thread id (progress on `GET /plan/{id}/events`). On success the form
     and the plan, both as text, are saved as a user message and an answer — reopening the
     conversation shows them, and the assistant can talk about the plan.
+
+    No `thread_id` (planning from an empty chat): a conversation is started first, like the
+    first chat message does, and its id comes back in the reply.
     """
-    conversation = await _owned(db, user_id, thread_id)
+    if thread_id:
+        conversation = await _owned(db, user_id, thread_id)
+    else:
+        title = f"Lập lộ trình {data.form.get('destination') or ''}".strip()
+        conversation = _new_conversation(_new_thread_id(), user_id, title)
+        db.add(conversation)
+        await db.commit()
+        thread_id = conversation.id
     if data.trip is not None:
         await llm_client.confirm_trip(
             client,
@@ -245,7 +255,7 @@ async def plan_in_chat(
             plan_thread_id=plan_thread_id,
             user_id=str(user_id),
         )
-    reply = ChatPlanReply.model_validate(body)
+    reply = ChatPlanReply.model_validate({**body, "thread_id": thread_id})
     if reply.plan.get("status") != "ok":
         return reply  # questions first; the conversation gets the plan once there is one
     _append(db, conversation, "human", reply.request_text)
