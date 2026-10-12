@@ -9,11 +9,12 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
 from app.core.config import settings
-from app.core.exceptions import UnprocessableError, UpstreamError
+from app.core.exceptions import NotFoundError, UnprocessableError, UpstreamError
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +161,29 @@ async def chat_plan(
 
     if response.status_code == httpx.codes.UNPROCESSABLE_ENTITY:
         raise UnprocessableError(_validation_message(response))
+    return _parse(response)
+
+
+async def get_place(
+    client: httpx.AsyncClient,
+    *,
+    place_id: str,
+    destination: str | None = None,
+    review_photos: bool = False,
+) -> dict[str, Any]:
+    """Details + reviews of one place (user clicked a place card). 404 upstream -> 404."""
+    params: dict[str, str] = {}
+    if destination:
+        params["destination"] = destination
+    if review_photos:
+        params["review_photos"] = "true"
+    try:
+        response = await client.get(f"/places/{quote(place_id, safe='')}", params=params or None)
+    except httpx.HTTPError as exc:
+        raise _unavailable(exc) from exc
+
+    if response.status_code == httpx.codes.NOT_FOUND:
+        raise NotFoundError("Không tìm thấy địa điểm")
     return _parse(response)
 
 
