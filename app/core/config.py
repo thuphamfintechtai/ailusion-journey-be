@@ -91,6 +91,9 @@ class Settings(BaseSettings):
 
     # --- LLM service (ailusion-journey-llm) ---
     LLM_SERVICE_URL: str = "http://localhost:8001"
+    # Shared with the LLM service (its SERVICE_API_KEY): sent as X-Service-Key on every call, so
+    # only this backend — behind login — can use it. Empty only when the LLM service has no key.
+    LLM_SERVICE_KEY: str = ""
     # Generous: one answer can take a while to generate.
     LLM_SERVICE_TIMEOUT: float = 120.0
     # How long a conversation stays listed. Match CHECKPOINT_TTL_MINUTES in the LLM service.

@@ -11,9 +11,11 @@ from app.core.config import settings
 
 
 def create_llm_client() -> httpx.AsyncClient:
+    headers = {"X-Service-Key": settings.LLM_SERVICE_KEY} if settings.LLM_SERVICE_KEY else {}
     return httpx.AsyncClient(
         base_url=settings.LLM_SERVICE_URL,
         timeout=httpx.Timeout(settings.LLM_SERVICE_TIMEOUT, connect=5.0),
+        headers=headers,
     )
 
 

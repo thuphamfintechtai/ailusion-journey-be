@@ -612,7 +612,7 @@ async def test_failed_plan_in_chat_saves_nothing_and_releases_the_plan_thread(
         app.dependency_overrides.pop(get_llm_client, None)
 
 
-async def test_plan_questions_are_returned_without_saving(
+async def test_plan_questions_are_saved_with_their_buttons(
     client: AsyncClient, user: User, redis: FakeAsyncRedis
 ) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
@@ -621,8 +621,8 @@ async def test_plan_questions_are_returned_without_saving(
                 200,
                 json={
                     "plan": {"status": "need_info", "questions": [{"id": "H1"}]},
-                    "request_text": "",
-                    "reply": "",
+                    "request_text": "Lập lộ trình: Huế, 2 ngày",
+                    "reply": "Mình cần thêm vài thông tin: Bạn đi cùng ai?",
                 },
             )
         return default_handler(request)
@@ -643,7 +643,10 @@ async def test_plan_questions_are_returned_without_saving(
         history = (await client.get(f"/api/v1/chat/threads/{thread_id}", headers=headers)).json()[
             "messages"
         ]
-        assert len(history) == 2  # chỉ lượt chat ban đầu, chưa lưu gì thêm
+        # Lượt chat ban đầu + yêu cầu lập lộ trình + câu hỏi lại (kèm kết quả để hiện nút chọn).
+        assert [m["role"] for m in history] == ["human", "ai", "human", "ai"]
+        assert history[3]["content"].startswith("Mình cần thêm vài thông tin")
+        assert history[3]["plan"]["result"]["status"] == "need_info"
     finally:
         app.dependency_overrides.pop(get_llm_client, None)
 

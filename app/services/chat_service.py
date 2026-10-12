@@ -43,8 +43,9 @@ from app.services import llm_client, plan_service
 
 logger = logging.getLogger(__name__)
 
-# How many past messages ride along to the LLM service, to rebuild an expired memory.
-CONTEXT_MESSAGES = 20
+# Replayed to the LLM service when its memory of the thread has expired: as many as it accepts
+# (ChatRequest.history max_length), so the assistant keeps the whole conversation in mind.
+CONTEXT_MESSAGES = 50
 # How many recent messages are read to prefill the trip form.
 TRIP_INFO_MESSAGES = 40
 TITLE_MAX_CHARS = 80
@@ -256,8 +257,8 @@ async def plan_in_chat(
             user_id=str(user_id),
         )
     reply = ChatPlanReply.model_validate({**body, "thread_id": thread_id})
-    if reply.plan.get("status") != "ok":
-        return reply  # questions first; the conversation gets the plan once there is one
+    # Saved either way: the plan, or the follow-up questions (status need_info) — reopening
+    # the chat shows them with their answer buttons, as the LLM service also remembers them.
     _append(db, conversation, "human", reply.request_text)
     # Keep the whole plan with the answer: reopening the chat shows the 3 options again.
     _append(db, conversation, "ai", reply.reply, plan={"form": form, "result": reply.plan})
