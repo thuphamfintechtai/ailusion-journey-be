@@ -27,19 +27,19 @@ async def register(data: UserCreate, db: DbSession) -> UserRead:
 
 
 @router.post("/login", response_model=TokenPair)
-async def login(data: LoginRequest, db: DbSession) -> TokenPair:
+async def login(data: LoginRequest, db: DbSession, redis: RedisClient) -> TokenPair:
     """Log in with a JSON body. Use this from the frontend."""
     user = await auth_service.authenticate(db, data.email, data.password)
-    return auth_service.issue_tokens(user)
+    return await auth_service.start_session(redis, user)
 
 
 @router.post("/token", response_model=TokenPair)
 async def login_oauth2_form(
-    form: Annotated[OAuth2PasswordRequestForm, Depends()], db: DbSession
+    form: Annotated[OAuth2PasswordRequestForm, Depends()], db: DbSession, redis: RedisClient
 ) -> TokenPair:
     """OAuth2 password flow (form data, `username` = email). Used by Swagger's Authorize button."""
     user = await auth_service.authenticate(db, form.username, form.password)
-    return auth_service.issue_tokens(user)
+    return await auth_service.start_session(redis, user)
 
 
 @router.post("/refresh", response_model=TokenPair)

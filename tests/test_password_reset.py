@@ -83,6 +83,11 @@ async def test_reset_password_success(
         "/api/v1/auth/refresh", json={"refresh_token": old_tokens["refresh_token"]}
     )
     assert resp.status_code == 401
+    # ...and so are access tokens: the old login session is over.
+    resp = await client.get(
+        "/api/v1/users/me", headers={"Authorization": f"Bearer {old_tokens['access_token']}"}
+    )
+    assert resp.status_code == 401
 
 
 async def test_reset_password_token_is_single_use(
@@ -126,7 +131,10 @@ async def test_reset_password_expired_token(client: AsyncClient, user: User) -> 
 async def test_reset_password_rejects_access_token(client: AsyncClient, user: User) -> None:
     resp = await client.post(
         RESET_URL,
-        json={"token": create_access_token(str(user.id)), "new_password": NEW_PASSWORD},
+        json={
+            "token": create_access_token(str(user.id), "no-session"),
+            "new_password": NEW_PASSWORD,
+        },
     )
     assert resp.status_code == 400
     assert resp.json()["code"] == "invalid_reset_token"

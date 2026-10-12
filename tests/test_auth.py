@@ -97,7 +97,8 @@ async def test_refresh_rotates_tokens(client: AsyncClient, user: User) -> None:
 
 async def test_access_token_cannot_be_used_to_refresh(client: AsyncClient, user: User) -> None:
     resp = await client.post(
-        "/api/v1/auth/refresh", json={"refresh_token": create_access_token(str(user.id))}
+        "/api/v1/auth/refresh",
+        json={"refresh_token": create_access_token(str(user.id), "no-session")},
     )
     assert resp.status_code == 401
 
@@ -111,4 +112,40 @@ async def test_logout_revokes_refresh_token(client: AsyncClient, user: User) -> 
     resp = await client.post(
         "/api/v1/auth/refresh", json={"refresh_token": tokens["refresh_token"]}
     )
+    assert resp.status_code == 401
+
+
+async def test_token_not_from_a_login_is_refused(client: AsyncClient, user: User) -> None:
+    # Signed with the right key but no email + password login behind it.
+    forged = create_access_token(str(user.id), "no-session")
+    resp = await client.get("/api/v1/users/me", headers=auth_header(forged))
+    assert resp.status_code == 401
+    resp = await client.post(
+        "/api/v1/chat/stream", headers=auth_header(forged), json={"message": "xin chào"}
+    )
+    assert resp.status_code == 401
+
+
+async def test_logout_ends_access_token_at_once(client: AsyncClient, user: User) -> None:
+    tokens = await login(client, user.email)
+    other = await login(client, user.email)  # another device stays logged in
+    await client.post("/api/v1/auth/logout", json={"refresh_token": tokens["refresh_token"]})
+
+    resp = await client.get("/api/v1/users/me", headers=auth_header(tokens["access_token"]))
+    assert resp.status_code == 401
+    resp = await client.get("/api/v1/users/me", headers=auth_header(other["access_token"]))
+    assert resp.status_code == 200
+
+
+async def test_refreshed_token_keeps_the_session(client: AsyncClient, user: User) -> None:
+    tokens = await login(client, user.email)
+    resp = await client.post(
+        "/api/v1/auth/refresh", json={"refresh_token": tokens["refresh_token"]}
+    )
+    fresh = resp.json()
+    resp = await client.get("/api/v1/users/me", headers=auth_header(fresh["access_token"]))
+    assert resp.status_code == 200
+
+    await client.post("/api/v1/auth/logout", json={"refresh_token": fresh["refresh_token"]})
+    resp = await client.get("/api/v1/users/me", headers=auth_header(fresh["access_token"]))
     assert resp.status_code == 401

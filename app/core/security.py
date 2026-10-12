@@ -24,6 +24,9 @@ class TokenPayload(BaseModel):
     sub: str
     type: TokenType
     jti: str
+    # Login session the token belongs to (see auth_service): only tokens from a real
+    # email + password login carry a live one.
+    sid: str
     iat: int
     exp: int
 
@@ -39,24 +42,31 @@ def verify_password(plain_password: str, hashed_password: str | None) -> bool:
     return password_hasher.verify(plain_password, hashed_password)
 
 
-def _create_token(subject: str, token_type: TokenType, expires_delta: timedelta) -> str:
+def _create_token(
+    subject: str, session_id: str, token_type: TokenType, expires_delta: timedelta
+) -> str:
     now = datetime.now(UTC)
     payload = {
         "sub": subject,
         "type": token_type,
         "jti": uuid.uuid4().hex,
+        "sid": session_id,
         "iat": now,
         "exp": now + expires_delta,
     }
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
-def create_access_token(subject: str) -> str:
-    return _create_token(subject, "access", timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
+def create_access_token(subject: str, session_id: str) -> str:
+    return _create_token(
+        subject, session_id, "access", timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
 
 
-def create_refresh_token(subject: str) -> str:
-    return _create_token(subject, "refresh", timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS))
+def create_refresh_token(subject: str, session_id: str) -> str:
+    return _create_token(
+        subject, session_id, "refresh", timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    )
 
 
 def decode_token(token: str, expected_type: TokenType) -> TokenPayload:
@@ -65,7 +75,7 @@ def decode_token(token: str, expected_type: TokenType) -> TokenPayload:
             token,
             settings.SECRET_KEY,
             algorithms=[settings.JWT_ALGORITHM],
-            options={"require": ["sub", "type", "jti", "iat", "exp"]},
+            options={"require": ["sub", "type", "jti", "sid", "iat", "exp"]},
         )
         payload = TokenPayload.model_validate(raw)
     except (jwt.InvalidTokenError, ValidationError) as exc:
