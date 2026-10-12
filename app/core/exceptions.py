@@ -2,6 +2,7 @@ import logging
 
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,28 @@ async def _app_error_handler(_: Request, exc: Exception) -> JSONResponse:
     )
 
 
+async def _database_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Lost the database connection mid-request: say so, as a 503 the client can retry.
+
+    Registered for `DBAPIError` so it runs inside the CORS middleware — the generic
+    `Exception` handler runs outside it, and a browser would then see a bare network error.
+    SQLAlchemy has already dropped the dead connections, so a retry gets a fresh one.
+    """
+    assert isinstance(exc, DBAPIError)
+    if not (exc.connection_invalidated or isinstance(exc, (InterfaceError, OperationalError))):
+        return await _unhandled_error_handler(request, exc)
+    logger.warning(
+        "Database connection lost on %s %s: %s", request.method, request.url.path, exc.orig
+    )
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={
+            "detail": "Cơ sở dữ liệu tạm thời không phản hồi, vui lòng thử lại",
+            "code": "database_unavailable",
+        },
+    )
+
+
 async def _unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
     logger.exception("Unhandled error on %s %s", request.method, request.url.path, exc_info=exc)
     return JSONResponse(
@@ -91,4 +114,5 @@ async def _unhandled_error_handler(request: Request, exc: Exception) -> JSONResp
 
 def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(AppError, _app_error_handler)
+    app.add_exception_handler(DBAPIError, _database_error_handler)
     app.add_exception_handler(Exception, _unhandled_error_handler)

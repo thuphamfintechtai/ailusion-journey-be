@@ -23,7 +23,7 @@ from sqlalchemy.pool import NullPool, StaticPool
 
 from app.core.redis import get_redis
 from app.db.base import Base
-from app.db.session import get_db
+from app.db.session import get_db, get_session_factory
 from app.main import app
 from app.models.user import User
 from app.schemas.user import UserCreate
@@ -82,6 +82,7 @@ async def client(
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_session_factory] = lambda: session_factory
     app.dependency_overrides[get_redis] = lambda: redis
 
     transport = ASGITransport(app=app)

@@ -15,11 +15,12 @@ router = APIRouter(prefix="/plan", tags=["plan"])
 async def create_plan(
     data: PlanCreate, user: CurrentUser, redis: RedisClient, llm: LlmClient
 ) -> dict[str, Any]:
-    """Fill the trip form, get back 3 options (balanced / budget / experience), the chosen
-    one with an explanation, a day-by-day schedule and the assumptions made.
+    """Fill the trip form, get back up to 3 options with a day-by-day schedule, the chosen one
+    with an explanation and the assumptions made — or follow-up questions when key details
+    are missing (`status: "need_info"`).
 
     Takes 20-60 s. Send a `thread_id` and open `GET /plan/{thread_id}/events` alongside to
-    show progress. The response is the LLM service's `PlanResponse` unchanged.
+    show progress. The response is the LLM service's `ItineraryResponse` unchanged.
     """
     return await plan_service.create_plan(redis=redis, client=llm, user_id=user.id, data=data)
 

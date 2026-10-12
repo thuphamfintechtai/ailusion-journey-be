@@ -4,14 +4,14 @@ import httpx
 from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
 from app.core.exceptions import ForbiddenError
 from app.core.llm import get_llm_client
 from app.core.redis import get_redis
 from app.core.security import decode_token
-from app.db.session import get_db
+from app.db.session import get_db, get_session_factory
 from app.models.user import User
 from app.services import auth_service
 
@@ -19,6 +19,7 @@ from app.services import auth_service
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_PREFIX}/auth/token")
 
 DbSession = Annotated[AsyncSession, Depends(get_db)]
+SessionFactory = Annotated[async_sessionmaker[AsyncSession], Depends(get_session_factory)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
 LlmClient = Annotated[httpx.AsyncClient, Depends(get_llm_client)]
 Token = Annotated[str, Depends(oauth2_scheme)]

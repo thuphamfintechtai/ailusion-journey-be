@@ -75,8 +75,14 @@ class Settings(BaseSettings):
     DB_ECHO: bool = False
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 20
+    # A database reached over the internet (NAT, firewall, cloud proxy) silently drops idle
+    # connections: turn pre-ping on and recycle well under the idle cutoff (e.g. 240s).
     DB_POOL_PRE_PING: bool = False
     DB_POOL_RECYCLE_SECONDS: int = 1800
+    # Seconds before giving up on connecting / on one statement, instead of hanging until
+    # the OS notices a dead socket (minutes).
+    DB_CONNECT_TIMEOUT_SECONDS: float = 10.0
+    DB_COMMAND_TIMEOUT_SECONDS: float = 30.0
     # Fail fast instead of queueing a request for 30s when the pool is exhausted.
     DB_POOL_TIMEOUT_SECONDS: float = 10.0
 

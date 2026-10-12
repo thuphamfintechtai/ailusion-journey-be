@@ -15,9 +15,11 @@ from tests.test_chat import auth, fake_llm
 
 THREAD_ID = "plan-0123456789abcdef"
 FORM = {
-    "persona": "P2",
-    "basic": {"destination": "Đà Lạt", "start_date": "2026-10-17", "days": 3, "children": 1},
-    "budget": {"total_vnd": 20000000, "hard": False},
+    "destination": "Đà Lạt",
+    "start_date": "2026-10-17",
+    "end_date": "2026-10-19",
+    "group_size": 3,
+    "budget": 20000000,
 }
 
 # What the faked LLM service received, per test.
@@ -25,23 +27,17 @@ seen: list[dict[str, object]] = []
 
 
 def plan_handler(request: httpx.Request) -> httpx.Response:
-    """Mimics the LLM service: POST /plan returns a (trimmed) PlanResponse."""
-    if request.url.path == "/plan":
+    """Mimics the LLM service: POST /itinerary returns a (trimmed) ItineraryResponse."""
+    if request.url.path == "/itinerary":
         body = json.loads(request.content)
         seen.append(body)
         return httpx.Response(
-            200,
-            json={
-                "thread_id": body["thread_id"],
-                "persona": body.get("persona", "P1"),
-                "decision": {"winner": "canbang"},
-                "options": {},
-            },
+            200, json={"thread_id": body["thread_id"], "status": "ok", "chosen": "PA1"}
         )
     if request.url.path.endswith("/events"):
         frames = (
             b'id: 1-0\ndata: {"node": "turn", "kind": "start"}\n\n'
-            b'id: 2-0\ndata: {"node": "chien_luoc", "kind": "plan", "text": "x"}\n\n'
+            b'id: 2-0\ndata: {"node": "tim_kiem", "kind": "step", "text": "x"}\n\n'
             b'id: 3-0\ndata: {"node": "turn", "kind": "done"}\n\n'
         )
         seen.append({"last_event_id": request.headers.get("last-event-id")})
@@ -66,11 +62,11 @@ async def test_create_plan_forwards_only_sent_fields(
     resp = await client.post("/api/v1/plan", json=FORM, headers=headers)
 
     assert resp.status_code == 200, resp.text
-    assert resp.json()["decision"]["winner"] == "canbang"
+    assert resp.json()["chosen"] == "PA1"
     sent = seen[0]
-    # Groups the client left out are not forwarded, so the LLM service can list them as
-    # assumptions instead of seeing explicit nulls.
-    assert set(sent) == {"persona", "basic", "budget", "thread_id", "user_id"}
+    # Fields the client left out are not forwarded: the LLM service treats a field it receives
+    # as filled in by the user, and reads blank ones from the message or asks.
+    assert set(sent) == {*FORM, "thread_id", "user_id"}
     assert sent["user_id"] == str(user.id)
     assert str(sent["thread_id"]).startswith("plan-")
 
@@ -102,7 +98,7 @@ async def test_events_are_forwarded_with_last_event_id(
         assert resp.headers["content-type"].startswith("text/event-stream")
         body = b"".join([chunk async for chunk in resp.aiter_bytes()])
 
-    assert b'"node": "chien_luoc"' in body
+    assert b'"node": "tim_kiem"' in body
     assert seen[-1] == {"last_event_id": "1-0"}
 
 
@@ -119,14 +115,6 @@ async def test_bad_thread_id_is_rejected(
     resp = await client.post("/api/v1/plan", json={**FORM, "thread_id": thread_id}, headers=headers)
     assert resp.status_code == 422
     assert seen == []
-
-
-async def test_unknown_persona_is_rejected(
-    client: AsyncClient, user: User, use_plan_llm: None
-) -> None:
-    headers = await auth(client, user)
-    resp = await client.post("/api/v1/plan", json={**FORM, "persona": "P9"}, headers=headers)
-    assert resp.status_code == 422
 
 
 async def test_someone_elses_plan_events_look_missing(
@@ -158,6 +146,23 @@ async def test_upstream_form_error_becomes_422(client: AsyncClient, user: User) 
         "detail": "Invalid plan form: basic.days: Input should be less than 6",
         "code": "validation_error",
     }
+
+
+async def test_upstream_business_error_keeps_its_message(client: AsyncClient, user: User) -> None:
+    message = "Chưa tìm được địa điểm tham quan nào ở Hội An."
+
+    def rejects(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(422, json={"detail": message})
+
+    app.dependency_overrides[get_llm_client] = lambda: fake_llm(rejects)
+    try:
+        headers = await auth(client, user)
+        resp = await client.post("/api/v1/plan", json=FORM, headers=headers)
+    finally:
+        app.dependency_overrides.pop(get_llm_client, None)
+
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == message
 
 
 async def test_failed_plan_releases_thread(

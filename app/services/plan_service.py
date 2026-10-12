@@ -1,4 +1,4 @@
-"""Trip plans: the form goes to the LLM service, which returns 3 options and a decision.
+"""Trip plans: the form goes to the LLM service, which returns up to 3 options and a decision.
 
 The plan itself lives in the LLM service (its checkpoint); like chat, the only thing we keep
 is which plans belong to which user — a Redis sorted set per user:
@@ -33,12 +33,20 @@ async def create_plan(
     *, redis: Redis, client: httpx.AsyncClient, user_id: uuid.UUID, data: PlanCreate
 ) -> dict[str, Any]:
     thread_id = data.thread_id or new_thread_id()
-    await _claim(redis, user_id, thread_id)
-    try:
+    async with claimed(redis, user_id, thread_id):
         return await llm_client.create_plan(
             client, form=data.form(), thread_id=thread_id, user_id=str(user_id)
         )
-    except Exception:
+
+
+@asynccontextmanager
+async def claimed(redis: Redis, user_id: uuid.UUID, thread_id: str) -> AsyncIterator[None]:
+    """Own `thread_id` for the user while the plan runs (so its progress stream can be read);
+    released again if the plan fails."""
+    await _claim(redis, user_id, thread_id)
+    try:
+        yield
+    except BaseException:
         await redis.zrem(_index_key(user_id), thread_id)
         raise
 

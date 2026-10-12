@@ -24,10 +24,11 @@ async def send_message(
     message: str,
     thread_id: str | None,
     user_id: str,
+    history: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Send one turn, wait for the full answer. Returns `{"thread_id", "reply"}`."""
     try:
-        response = await client.post("/chat", json=_payload(message, thread_id, user_id))
+        response = await client.post("/chat", json=_payload(message, thread_id, user_id, history))
     except httpx.HTTPError as exc:
         raise _unavailable(exc) from exc
     return _parse(response)
@@ -52,10 +53,11 @@ async def stream_message(
     message: str,
     thread_id: str | None,
     user_id: str,
+    history: list[dict[str, str]] | None = None,
 ) -> AsyncIterator[httpx.Response]:
     """Open the upstream SSE stream; the caller forwards `aiter_bytes()` to its client."""
     request = client.build_request(
-        "POST", "/chat/stream", json=_payload(message, thread_id, user_id)
+        "POST", "/chat/stream", json=_payload(message, thread_id, user_id, history)
     )
     try:
         response = await client.send(request, stream=True)
@@ -73,6 +75,39 @@ async def stream_message(
         await response.aclose()
 
 
+async def get_trip(client: httpx.AsyncClient, *, thread_id: str, user_id: str) -> dict[str, Any]:
+    """The trip form the LLM service filled from the chat (read from its store, no LLM call)."""
+    try:
+        response = await client.get(f"/chat/{thread_id}/trip", params={"user_id": user_id})
+    except httpx.HTTPError as exc:
+        raise _unavailable(exc) from exc
+    return _parse(response)
+
+
+async def confirm_trip(
+    client: httpx.AsyncClient, *, thread_id: str, user_id: str, info: dict[str, Any]
+) -> dict[str, Any]:
+    """Save the form exactly as the user confirmed it (they pressed "Lập lộ trình")."""
+    try:
+        response = await client.put(
+            f"/chat/{thread_id}/trip", json={"info": info, "user_id": user_id}
+        )
+    except httpx.HTTPError as exc:
+        raise _unavailable(exc) from exc
+    return _parse(response)
+
+
+async def extract_trip_info(
+    client: httpx.AsyncClient, *, messages: list[dict[str, str]]
+) -> dict[str, Any]:
+    """Read a conversation, return the trip details mentioned in it (destination, days...)."""
+    try:
+        response = await client.post("/trip-info", json={"messages": messages})
+    except httpx.HTTPError as exc:
+        raise _unavailable(exc) from exc
+    return _parse(response)
+
+
 async def create_plan(
     client: httpx.AsyncClient,
     *,
@@ -80,15 +115,43 @@ async def create_plan(
     thread_id: str,
     user_id: str,
 ) -> dict[str, Any]:
-    """Build a trip plan from the form. Returns the LLM service's `PlanResponse` as-is.
+    """Build a trip plan from the form. Returns the LLM service's `ItineraryResponse` as-is.
 
-    A 422 upstream means the form itself is invalid (bad date, fixed event outside the
-    trip...), so it becomes a 422 for our client, not a 503.
+    A 422 upstream means the form itself is invalid (bad date, no data for the destination...),
+    so it becomes a 422 for our client, not a 503.
     """
     payload = {**form, "thread_id": thread_id, "user_id": user_id}
     try:
         response = await client.post(
-            "/plan",
+            "/itinerary",
+            json=payload,
+            timeout=httpx.Timeout(settings.LLM_PLAN_TIMEOUT, connect=5.0),
+        )
+    except httpx.HTTPError as exc:
+        raise _unavailable(exc) from exc
+
+    if response.status_code == httpx.codes.UNPROCESSABLE_ENTITY:
+        raise UnprocessableError(_validation_message(response))
+    return _parse(response)
+
+
+async def chat_plan(
+    client: httpx.AsyncClient,
+    *,
+    chat_thread_id: str,
+    form: dict[str, Any],
+    plan_thread_id: str,
+    user_id: str,
+) -> dict[str, Any]:
+    """Build a plan from the chat's trip form; the LLM service also appends it to the chat.
+
+    Returns `{"plan": ItineraryResponse, "request_text", "reply"}`. Same timeout and 422 handling
+    as `create_plan`.
+    """
+    payload = {**form, "thread_id": plan_thread_id, "user_id": user_id}
+    try:
+        response = await client.post(
+            f"/chat/{chat_thread_id}/plan",
             json=payload,
             timeout=httpx.Timeout(settings.LLM_PLAN_TIMEOUT, connect=5.0),
         )
@@ -132,11 +195,19 @@ async def stream_events(
         await response.aclose()
 
 
-def _payload(message: str, thread_id: str | None, user_id: str) -> dict[str, Any]:
+def _payload(
+    message: str,
+    thread_id: str | None,
+    user_id: str,
+    history: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    """`history` lets the LLM service rebuild a conversation whose memory has expired."""
     # session_id groups a user's conversations together in Langfuse.
     payload: dict[str, Any] = {"message": message, "user_id": user_id, "session_id": user_id}
     if thread_id:
         payload["thread_id"] = thread_id
+    if history:
+        payload["history"] = history
     return payload
 
 
@@ -153,6 +224,8 @@ def _validation_message(response: httpx.Response) -> str:
         detail = response.json().get("detail")
     except ValueError:
         detail = None
+    if isinstance(detail, str) and detail:  # lỗi nghiệp vụ, VD chưa có địa điểm cho điểm đến
+        return detail
     if isinstance(detail, list) and detail:
         first = detail[0]
         location = ".".join(str(part) for part in first.get("loc", [])[1:])

@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -7,54 +7,36 @@ PLAN_THREAD_ID = r"^plan-[0-9a-f]{16}$"
 
 
 class PlanCreate(BaseModel):
-    """The trip-planning form (8 groups, 29 fields) plus the user's persona.
+    """The trip form of the LLM service's itinerary pipeline (`TripForm`).
 
-    The LLM service owns the form's full schema and validation (`ailusion.planning.request`),
-    so here we only check the outer shape and forward what the client sent. Groups the
-    client leaves out are not forwarded either: the LLM service fills its defaults and
-    lists them as assumptions in the result.
+    The LLM service owns the form's schema and validation (`ailusion.itinerary.form`), so here
+    we only check the routing field and forward the rest unchanged. Send only the fields the
+    user filled in: the LLM service reads blank ones from `message` or asks a follow-up
+    question (`status: "need_info"`).
 
     `thread_id` is optional. Send one (`plan-` + 16 hex chars) to open
     `GET /plan/{thread_id}/events` while the plan is being built.
     """
 
-    persona: Literal["P1", "P2", "P3", "P4"] | None = Field(
-        default=None,
-        description="P1 khám phá tiết kiệm · P2 thoải mái, dễ tiếp cận · "
-        "P3 thư giãn, trải nghiệm · P4 quỹ thời gian hạn chế",
-    )
-    basic: dict[str, Any] | None = None
-    budget: dict[str, Any] | None = None
-    time: dict[str, Any] | None = None
-    interests: dict[str, Any] | None = None
-    weather: dict[str, Any] | None = None
-    transport: str | None = None
-    mobility: str | None = None
-    access: dict[str, Any] | None = None
     thread_id: str | None = Field(default=None, pattern=PLAN_THREAD_ID)
 
     model_config = ConfigDict(
+        extra="allow",
         json_schema_extra={
             "examples": [
                 {
-                    "persona": "P2",
-                    "basic": {
-                        "destination": "Đà Lạt",
-                        "start_date": "2026-10-17",
-                        "days": 3,
-                        "adults": 2,
-                        "children": 1,
-                        "seniors": 2,
-                    },
-                    "budget": {"total_vnd": 20000000, "hard": False},
-                    "interests": {"tags": {"thiennhien": 2}},
-                    "weather": {"rain": "indoor"},
-                    "mobility": "nhe",
+                    "destination": "Đà Nẵng",
+                    "start_date": "2026-10-25",
+                    "end_date": "2026-10-27",
+                    "group_size": 2,
+                    "group_type": "couple",
+                    "budget": 15000000,
+                    "purposes": ["relax", "food"],
                 }
             ]
-        }
+        },
     )
 
     def form(self) -> dict[str, Any]:
-        """Only the fields the client actually sent, minus our own routing fields."""
+        """The fields the client sent, minus our own routing field."""
         return self.model_dump(exclude_unset=True, exclude={"thread_id"})
