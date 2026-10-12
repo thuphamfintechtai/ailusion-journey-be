@@ -87,7 +87,12 @@ tests/                      # pytest + httpx
 | POST | `/api/v1/chat/stream` | Như trên nhưng trả lời dần (SSE) |
 | GET | `/api/v1/chat/threads` | Hội thoại của mình, mới nhất trước |
 | GET | `/api/v1/chat/threads/{id}` | Lịch sử một hội thoại |
+| PATCH | `/api/v1/chat/threads/{id}` | Đổi tên hội thoại |
 | DELETE | `/api/v1/chat/threads/{id}` | Bỏ hội thoại khỏi danh sách |
+| GET / PUT | `/api/v1/chat/threads/{id}/trip-info` | Form chuyến đi trợ lý đã điền từ cuộc trò chuyện / người dùng xác nhận form |
+| POST | `/api/v1/chat/threads/{id}/plan` | Lập lộ trình từ form của trang chat; có phương án thì lưu vào hội thoại (`messages.plan`) |
+| POST | `/api/v1/plan` | Lập lộ trình từ form (trang `/plan`), trả nguyên `ItineraryResponse` của service LLM |
+| GET | `/api/v1/plan/{thread_id}/events` | Tiến độ từng bước của một lần lập lộ trình (SSE) |
 
 **Về token:** access token sống ngắn (mặc định 30 phút) và không bị thu hồi khi logout; refresh token (7 ngày) được xoay vòng mỗi lần `/refresh`, và `jti` của token đã dùng/đã logout được lưu trong Redis tới khi hết hạn.
 
@@ -95,12 +100,12 @@ tests/                      # pytest + httpx
 
 ## Chat với agent du lịch
 
-Phần trả lời do service LLM riêng đảm nhiệm (repo **ailusion-journey-llm**, LangGraph + Gemini).
-BE không gọi thẳng Gemini — nó gọi HTTP sang service đó và lo phần người dùng: ai được đụng
-hội thoại nào.
+Phần trả lời và lập lộ trình do service LLM riêng đảm nhiệm (repo **ailusion-journey-llm**,
+LangGraph + OpenAI gpt-4.1-mini, dữ liệu lấy qua MCP server **ailusion-journey-mcp**). BE không
+gọi thẳng LLM — nó gọi HTTP sang service đó và lo phần người dùng: ai được đụng hội thoại nào.
 
 ```
-Frontend ──► BE :8000 ──► LLM service :8001 ──► Gemini
+Frontend ──► BE :8000 ──► LLM service :8001 ──► OpenAI (+ MCP :8002)
                 │                  │
           ai sở hữu thread     lịch sử hội thoại
           (Redis của BE)       (Redis của LLM service)
@@ -134,6 +139,22 @@ curl -X POST localhost:8000/api/v1/chat -H "Authorization: Bearer $TOKEN" \
 ```
 
 **Frontend không cần gửi lại lịch sử** — chỉ giữ `thread_id` rồi gửi kèm mỗi lượt.
+
+### Lập lộ trình
+
+Form chuyến đi (`TripForm` của service LLM: điểm đến, ngày đi / về, số người, ngân sách, mục
+đích…) đi nguyên sang `POST /itinerary` của service LLM — BE chỉ kiểm `thread_id`, không kiểm
+từng trường. **Chỉ gửi ô người dùng đã điền**: service LLM coi ô có mặt là người dùng điền, ô
+trống thì đọc từ lời nhắn (`message`) hoặc hỏi lại.
+
+Kết quả có `status`:
+
+- `ok`: tối đa 3 phương án, phương án đề xuất kèm lời giải thích, giả định, giá ước (nếu có).
+- `need_info`: còn thiếu ý quan trọng — `questions` kèm nút chọn; điền thêm rồi gửi lại form.
+  Ở trang chat, kết quả này không được lưu vào hội thoại.
+
+Mất 20–60 giây. Muốn hiện tiến độ thì tự tạo `thread_id` dạng `plan-` + 16 ký tự hex, gửi kèm
+form và mở `GET /api/v1/plan/{thread_id}/events` song song (trả 404 cho tới khi lần chạy bắt đầu).
 
 Vài điểm đáng lưu ý:
 
