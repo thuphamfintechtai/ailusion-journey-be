@@ -116,6 +116,7 @@ services:
       - traefik.http.routers.ailusion-api.rule=Host(`${API_HOST:-journey-api.ailusion.io.vn}`)
       - traefik.http.routers.ailusion-api.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
       - traefik.http.routers.ailusion-api.tls=true
+      - traefik.http.routers.ailusion-api.tls.certresolver=${TRAEFIK_CERTRESOLVER:-myresolver}
       - traefik.http.routers.ailusion-api.service=ailusion-api
       - traefik.http.services.ailusion-api.loadbalancer.server.port=8000
       - traefik.http.services.ailusion-api.loadbalancer.serverstransport=ailusion-api
