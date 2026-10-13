@@ -1,0 +1,136 @@
+# Backend homelab: Postgres + Redis + migrate + API của riêng repo này.
+# Compose dev (docker-compose.yml) không đổi.
+#
+# Cần mạng dùng chung (một lần trên máy): docker network create ailusion
+# LLM phải có alias "llm" trên mạng đó.
+#
+#   cp .env.homelab.example .env.homelab
+#   docker compose --env-file .env.homelab -f compose.homelab.yaml up -d --build
+
+name: ailusion-be
+
+x-app-env: &app-env
+  ENVIRONMENT: production
+  LOG_LEVEL: INFO
+  API_V1_PREFIX: /api/v1
+  CORS_ORIGINS: https://${WEB_HOST:-journey.ailusion.io.vn}
+  SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env.homelab}
+  FRONTEND_URL: https://${WEB_HOST:-journey.ailusion.io.vn}
+  POSTGRES_HOST: db
+  POSTGRES_PORT: "5432"
+  POSTGRES_USER: ${POSTGRES_USER:-postgres}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.homelab}
+  POSTGRES_DB: ${POSTGRES_DB:-ailusion_journey}
+  POSTGRES_SSLMODE: prefer
+  REDIS_URL: redis://redis:6379/0
+  LLM_SERVICE_URL: http://llm:8001
+  LLM_SERVICE_KEY: ${SERVICE_API_KEY:?set SERVICE_API_KEY in .env.homelab}
+  LLM_SERVICE_TIMEOUT: "120"
+  LLM_PLAN_TIMEOUT: "300"
+  CHAT_THREAD_TTL_MINUTES: "1440"
+  PLAN_THREAD_TTL_MINUTES: "1440"
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_FROM: ${SMTP_FROM:-no-reply@ailusion.io.vn}
+  SMTP_TLS: ${SMTP_TLS:-true}
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.homelab}
+      POSTGRES_DB: ${POSTGRES_DB:-ailusion_journey}
+      TZ: Asia/Ho_Chi_Minh
+    ports:
+      - "127.0.0.1:${DB_HOST_PORT:-5434}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    labels:
+      - traefik.enable=false
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-6380}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    labels:
+      - traefik.enable=false
+
+  migrate:
+    build: .
+    image: ailusion-journey-be:homelab
+    command: ["alembic", "upgrade", "head"]
+    environment: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    labels:
+      - traefik.enable=false
+
+  api:
+    build: .
+    image: ailusion-journey-be:homelab
+    container_name: ailusion-api
+    restart: unless-stopped
+    environment: *app-env
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      default: {}
+      ailusion:
+        aliases:
+          - api
+      proxy: {}
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK:-proxy}
+      - traefik.http.routers.ailusion-api.rule=Host(`${API_HOST:-journey.api.ailusion.io.vn}`)
+      - traefik.http.routers.ailusion-api.entrypoints=${TRAEFIK_ENTRYPOINT:-web}
+      - traefik.http.routers.ailusion-api.service=ailusion-api
+      - traefik.http.services.ailusion-api.loadbalancer.server.port=8000
+      - traefik.http.services.ailusion-api.loadbalancer.serverstransport=ailusion-api
+      - traefik.http.services.ailusion-api.loadbalancer.healthcheck.path=/health
+      - traefik.http.services.ailusion-api.loadbalancer.healthcheck.interval=10s
+      - traefik.http.serversTransports.ailusion-api.forwardingTimeouts.responseHeaderTimeout=300s
+      - traefik.http.serversTransports.ailusion-api.forwardingTimeouts.idleConnTimeout=300s
+
+networks:
+  ailusion:
+    external: true
+    name: ailusion
+  proxy:
+    external: true
+    name: ${TRAEFIK_NETWORK:-proxy}
+
+volumes:
+  pgdata:
+  redisdata:
