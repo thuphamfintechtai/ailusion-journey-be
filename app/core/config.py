@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     # --- App ---
     PROJECT_NAME: str = "Ailusion Journey API"
-    VERSION: str = "0.1.0"
+    VERSION: str = "1.1.0"
     ENVIRONMENT: Literal["local", "staging", "production"] = "local"
     API_V1_PREFIX: str = "/api/v1"
     LOG_LEVEL: str = "INFO"
