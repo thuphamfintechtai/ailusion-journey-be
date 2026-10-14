@@ -1,7 +1,9 @@
 # CI/CD backend (FastAPI)
 #
-# - Pull request / push: ruff, mypy, pytest (SQLite in-memory + fakeredis, không cần Docker).
-# - Push lên main (sau khi CI xanh): SSH vào server, cập nhật code đúng commit vừa test, chạy
+# Nhánh: lập trình trên `dev` (mặc định), `main` chỉ để deploy (merge dev -> main qua PR).
+#
+# - Pull request / push lên dev hoặc main: ruff, mypy, pytest (SQLite in-memory + fakeredis, không cần Docker).
+# - Push / merge vào main (sau khi CI xanh): SSH vào server, cập nhật code đúng commit vừa test, chạy
 #   lại `compose.homelab.yaml` rồi chờ container `ailusion-api` healthy (lỗi thì in log và báo đỏ).
 #
 # Cần cấu hình trong repo (Settings → Secrets and variables → Actions):
@@ -15,7 +17,7 @@ name: CI/CD
 
 on:
   push:
-    branches: [main]
+    branches: [dev, main]
   pull_request:
   workflow_dispatch:
 
