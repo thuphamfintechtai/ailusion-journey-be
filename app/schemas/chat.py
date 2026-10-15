@@ -58,6 +58,14 @@ class ChatRename(BaseModel):
     title: str = Field(min_length=1, max_length=200)
 
 
+class TripMustVisit(BaseModel):
+    """A specific place the user wants to visit, optionally on a given day / time."""
+
+    name: str
+    day: int | None = None
+    time: str | None = Field(None, description='"HH:MM" or morning / afternoon / evening')
+
+
 class TripInfo(BaseModel):
     """Trip details mentioned so far in a conversation, to prefill the chat's trip form.
 
@@ -79,6 +87,7 @@ class TripInfo(BaseModel):
     interests: list[str] = Field(default_factory=list)
     transport: str | None = None
     pace: str | None = None
+    must_visits: list[TripMustVisit] = Field(default_factory=list)
 
 
 class MissingField(BaseModel):
