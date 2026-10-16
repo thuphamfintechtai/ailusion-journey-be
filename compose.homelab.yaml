@@ -26,7 +26,8 @@ x-app-env: &app-env
   LLM_SERVICE_URL: http://llm:8001
   LLM_SERVICE_KEY: ${SERVICE_API_KEY:?set SERVICE_API_KEY in .env.homelab}
   LLM_SERVICE_TIMEOUT: "120"
-  LLM_PLAN_TIMEOUT: "300"
+  # Một lộ trình chạy 2–4 phút (3 phương án, ~250 lượt gọi tool); để dư gấp đôi. Đổi qua .env.homelab.
+  LLM_PLAN_TIMEOUT: ${LLM_PLAN_TIMEOUT:-600}
   CHAT_THREAD_TTL_MINUTES: "1440"
   PLAN_THREAD_TTL_MINUTES: "1440"
   SMTP_HOST: ${SMTP_HOST:-}
